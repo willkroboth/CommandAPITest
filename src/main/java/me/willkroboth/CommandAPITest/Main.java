@@ -3,16 +3,14 @@ package me.willkroboth.CommandAPITest;
 import dev.jorel.commandapi.CommandAPI;
 import dev.jorel.commandapi.CommandAPIBukkitConfig;
 import dev.jorel.commandapi.CommandAPICommand;
-import dev.jorel.commandapi.arguments.ArgumentSuggestions;
-import dev.jorel.commandapi.arguments.GreedyStringArgument;
-import dev.jorel.commandapi.arguments.LocationArgument;
 import dev.jorel.commandapi.arguments.StringArgument;
-import dev.jorel.commandapi.executors.ExecutorType;
+import dev.jorel.commandapi.exceptions.WrapperCommandSyntaxException;
 import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
+import org.bukkit.Server;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.lang.reflect.Method;
 
 public class Main extends JavaPlugin {
     @Override
@@ -27,25 +25,45 @@ public class Main extends JavaPlugin {
     @Override
     public void onEnable() {
         CommandAPI.onEnable();
-        new LocationArgument("");
 
-        new CommandAPICommand("warn")
-                .withPermission("my.super.cool.perm")
-                .withArguments(
-                        new StringArgument("player").replaceSuggestions(ArgumentSuggestions.strings(
-                                info -> Bukkit.getOnlinePlayers().stream().map(Player::getName).toArray(String[]::new)
-                        )),
-                        new GreedyStringArgument("reason")
-                )
-                .executes((sender, args) -> {
-                    String playerName = (String) args.get(0);
+        new CommandAPICommand("register")
+                .withArguments(new StringArgument("command"))
+                .executes(info -> {
+                    String command = info.args().getUnchecked("command");
+                    assert command != null;
 
-                    // Check player name
-                    if(!playerName.matches("coolRegexExpression")) throw CommandAPI.failWithString("Player name is invalid");
+                    new CommandAPICommand(command)
+                            .executes(subInfo -> {
+                                subInfo.sender().sendMessage("You ran the " + command + " command!");
+                            })
+                            .register();
 
-                    // Get player
-                    Player player = Bukkit.getPlayer(playerName);
-                }, ExecutorType.CONSOLE, ExecutorType.PLAYER)
+                    updateCommandMap();
+                })
                 .register();
+
+        new CommandAPICommand("unregister")
+                .withArguments(new StringArgument("command"))
+                .executes(info -> {
+                    String command = info.args().getUnchecked("command");
+                    assert command != null;
+
+                    CommandAPI.unregister(command);
+
+                    updateCommandMap();
+                })
+                .register();
+    }
+
+    private static void updateCommandMap() throws WrapperCommandSyntaxException {
+        Server server = Bukkit.getServer();
+        try {
+            Method setVanillaCommands = server.getClass().getDeclaredMethod("setVanillaCommands", boolean.class);
+            setVanillaCommands.setAccessible(true);
+            setVanillaCommands.invoke(server, false);
+        } catch (ReflectiveOperationException e) {
+            e.printStackTrace();
+            throw CommandAPI.failWithString("Could not update commands: " + e.getMessage());
+        }
     }
 }
